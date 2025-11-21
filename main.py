@@ -95,6 +95,10 @@ class ImageViewerApp:
         notebook.add(sharpening_frame, text="Sharpening")
         self._build_sharpening_filters(sharpening_frame)
 
+        frequency_frame = ttk.Frame(notebook)
+        notebook.add(frequency_frame, text="Frequency")
+        self._build_fft_filters(frequency_frame)
+
     def _build_image_display(self):
         self.image_panel = ttk.LabelFrame(self.main_panel, text="Image Preview")
         self.image_panel.grid(row=0, column=0, sticky="nsew")
@@ -222,6 +226,15 @@ class ImageViewerApp:
 
         section = self._build_section(parent, "Roberts Filter")
         ttk.Button(section, text="Roberts (magnitude)", command=lambda: self.apply_filter(self.roberts_magnitude)).pack(fill="x", pady=2)
+
+    def _build_fft_filters(self, parent: ttk.Frame):
+        section = self._build_section(parent, "Low Pass Filter (FFT)")
+        for radius in (20, 40, 60):
+            ttk.Button(section, text=f"Low Pass (r={radius})", command=lambda r=radius: self.apply_fft_filter(self.gaussian_lowpass_fft, r)).pack(fill="x", pady=2)
+
+        section = self._build_section(parent, "High Pass Filter (FFT)")
+        for radius in (20, 40, 60):
+            ttk.Button(section, text=f"High Pass (r={radius})", command=lambda r=radius: self.apply_fft_filter(self.gaussian_highpass_fft, r)).pack(fill="x", pady=2)
 
     # -------------------- Image Management -------------------- #
     def open_image(self):
@@ -403,6 +416,68 @@ class ImageViewerApp:
         magnitude = cv2.magnitude(gx, gy)
         magnitude = np.clip(magnitude, 0, 255).astype(np.uint8)
         return cv2.cvtColor(magnitude, cv2.COLOR_GRAY2BGR)
+
+    # -------------------- FFT Implementation -------------------- #
+    def apply_fft_filter(self, filter_fn: Callable, radius: int):
+        if self.processed_image is None:
+            messagebox.showinfo("No image", "Open an image first.")
+            return
+
+        # Convert to grayscale for FFT
+        image_rgb = np.array(self.processed_image)
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        
+        # Pad to optimal size
+        rows, cols = gray.shape
+        nrows = cv2.getOptimalDFTSize(rows)
+        ncols = cv2.getOptimalDFTSize(cols)
+        padded = cv2.copyMakeBorder(gray, 0, nrows - rows, 0, ncols - cols, cv2.BORDER_CONSTANT, value=0)
+
+        # DFT
+        dft = cv2.dft(np.float32(padded), flags=cv2.DFT_COMPLEX_OUTPUT)
+        dft_shift = np.fft.fftshift(dft)
+
+        # Create mask
+        mask = filter_fn(dft_shift.shape, radius)
+
+        # Apply mask
+        fshift = dft_shift * mask
+
+        # Inverse DFT
+        f_ishift = np.fft.ifftshift(fshift)
+        img_back = cv2.idft(f_ishift)
+        img_back = cv2.magnitude(img_back[:, :, 0], img_back[:, :, 1])
+
+        # Crop back to original size
+        img_back = img_back[:rows, :cols]
+
+        # Normalize to 0-255
+        cv2.normalize(img_back, img_back, 0, 255, cv2.NORM_MINMAX)
+        img_back = np.uint8(img_back)
+
+        # Convert back to RGB (grayscale result)
+        result_rgb = cv2.cvtColor(img_back, cv2.COLOR_GRAY2RGB)
+        self.processed_image = Image.fromarray(result_rgb)
+        self.display_image()
+
+    @staticmethod
+    def gaussian_lowpass_fft(shape, radius):
+        rows, cols, _ = shape
+        crow, ccol = rows // 2, cols // 2
+        mask = np.zeros((rows, cols, 2), np.float32)
+        y, x = np.ogrid[:rows, :cols]
+        # Gaussian formula: H(u,v) = exp(-D^2 / (2*D0^2))
+        d_squared = (x - ccol) ** 2 + (y - crow) ** 2
+        response = np.exp(-d_squared / (2 * (radius ** 2)))
+        mask[:, :, 0] = response
+        mask[:, :, 1] = response
+        return mask
+
+    @staticmethod
+    def gaussian_highpass_fft(shape, radius):
+        # HPF = 1 - LPF
+        lpf_mask = ImageViewerApp.gaussian_lowpass_fft(shape, radius)
+        return 1 - lpf_mask
 
     # -------------------- Intensity Transforms -------------------- #
     def apply_intensity_transforms(self):
