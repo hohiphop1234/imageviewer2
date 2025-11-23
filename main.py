@@ -122,18 +122,18 @@ class ImageViewerApp(ctk.CTk):
         scroll.pack(fill="both", expand=True)
         
         ctk.CTkLabel(scroll, text="Box Filter", font=ctk.CTkFont(weight="bold")).pack(pady=(5,0))
-        for size in (3, 5, 7):
+        for size in (5, 15, 31):
             self._create_filter_btn(scroll, f"Box ({size}x{size})", lambda s=size: self.apply_filter(self.box_filter, s))
 
         ctk.CTkLabel(scroll, text="Gaussian Filter", font=ctk.CTkFont(weight="bold")).pack(pady=(10,0))
-        for size in (3, 5, 7):
+        for size in (5, 15, 31):
             self._create_filter_btn(scroll, f"Gaussian ({size}x{size})", lambda s=size: self.apply_filter(self.gaussian_filter, s))
 
         ctk.CTkLabel(scroll, text="Other", font=ctk.CTkFont(weight="bold")).pack(pady=(10,0))
-        self._create_filter_btn(scroll, "Lowpass (3x3)", lambda: self.apply_filter(self.lowpass_filter, 3))
+        self._create_filter_btn(scroll, "Lowpass (5x5)", lambda: self.apply_filter(self.lowpass_filter, 5))
         
         ctk.CTkLabel(scroll, text="Median Filter", font=ctk.CTkFont(weight="bold")).pack(pady=(10,0))
-        for size in (3, 5, 7):
+        for size in (5, 11, 21):
             self._create_filter_btn(scroll, f"Median ({size}x{size})", lambda s=size: self.apply_filter(self.median_filter, s))
 
     def _build_statistical_filters(self, parent):
@@ -313,11 +313,15 @@ class ImageViewerApp(ctk.CTk):
         if self.processed_image is None:
             messagebox.showinfo("No image", "Open an image first.")
             return
-        image_bgr = cv2.cvtColor(np.array(self.processed_image), cv2.COLOR_RGB2BGR)
-        result_bgr = filter_fn(image_bgr, *args, **kwargs)
-        result_rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
-        self.processed_image = Image.fromarray(result_rgb)
-        self.display_image()
+        
+        try:
+            image_bgr = cv2.cvtColor(np.array(self.processed_image), cv2.COLOR_RGB2BGR)
+            result_bgr = filter_fn(image_bgr, *args, **kwargs)
+            result_rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+            self.processed_image = Image.fromarray(result_rgb)
+            self.display_image()
+        except Exception as e:
+            messagebox.showerror("Error", f"Filter failed:\n{e}")
 
     # -------------------- Filter Implementations -------------------- #
     @staticmethod
